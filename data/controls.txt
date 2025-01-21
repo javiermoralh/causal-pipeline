@@ -1,0 +1,7 @@
+loss_given_default
+n_loans
+debt_cirbe
+default_debt_amount
+years_since_default
+n_refin
+n_cards

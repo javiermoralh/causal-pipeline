@@ -13,6 +13,8 @@ from dowhy import gcm
 from dowhy.gcm.independence_test import approx_kernel_based
 from pgmpy.base import DAG as PGMDAG
 
+from config import TREATMENT, OUTCOME
+
 
 def make_graph(adjacency_matrix, labels=None):
     idx = np.abs(adjacency_matrix) > 0.01
@@ -102,6 +104,40 @@ def get_nx_graph_FCI(causal_graph_matrix, feature_names):
     return G
 
 
+def get_nx_graph_ges(ges_result, feature_names):
+    """
+    Convert the .graph matrix in ges_result['G'] into a NetworkX DiGraph
+    with node labels = your feature names.
+    """
+    mat = ges_result['G'].graph
+    n = mat.shape[0]
+
+    # Initialize DiGraph
+    G_nx = nx.DiGraph()
+
+    # Add nodes using the feature names
+    G_nx.add_nodes_from(feature_names)
+
+    # Now add edges according to the GES encoding
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+
+            # i -> j
+            if (mat[j, i] == 1) and (mat[i, j] == -1):
+                G_nx.add_edge(feature_names[i], feature_names[j])
+
+            # j -> i
+            elif (mat[i, j] == 1) and (mat[j, i] == -1):
+                G_nx.add_edge(feature_names[j], feature_names[i])
+
+            # (Optionally) handle undirected edges if needed 
+            # i -- j => mat[i,j] == mat[j,i] == -1
+
+    return G_nx
+
+
 def create_prior(data, package, TREATMENT, TARGET, algorithm=None, force_treatmemnt_output=False):
     """
     Function to create causal graph priors dependending on package and algorithm
@@ -117,22 +153,29 @@ def create_prior(data, package, TREATMENT, TARGET, algorithm=None, force_treatme
     id_outcome = feature_ids[TARGET]
     
     if package == "causal-learn":
-        priori = BackgroundKnowledge()
-        for feature, index in feature_ids.items():
-            node, node_tretament, node_outcome = (
-                GraphNode('X' + str(index+1)),
-                GraphNode('X' + str(id_treatment+1)),
-                GraphNode('X' + str(id_outcome+1)),
-            )
-            priori.add_forbidden_by_node(node_outcome, node_tretament)
-            if feature not in [TREATMENT, TARGET]:
-                priori.add_forbidden_by_node(node_tretament, node)
-                priori.add_forbidden_by_node(node_outcome, node)
-            if "age" in feature_ids.keys():
-                node_age = GraphNode('X' + str(feature_ids["age"]+1))
-                priori.add_forbidden_by_node(node, node_age)
-        if force_treatmemnt_output:
-            priori.add_required_by_node(node_tretament, node_outcome)
+        if algorithm == "fci":
+            priori = BackgroundKnowledge()
+            for feature, index in feature_ids.items():
+                node, node_tretament, node_outcome = (
+                    GraphNode('X' + str(index+1)),
+                    GraphNode('X' + str(id_treatment+1)),
+                    GraphNode('X' + str(id_outcome+1)),
+                )
+                priori.add_forbidden_by_node(node_outcome, node_tretament)
+                if feature not in [TREATMENT, TARGET]:
+                    priori.add_forbidden_by_node(node_tretament, node)
+                    priori.add_forbidden_by_node(node_outcome, node)
+            if force_treatmemnt_output:
+                priori.add_required_by_node(node_tretament, node_outcome)
+        elif algorithm == "lingam":
+            priori = np.full((n_dim, n_dim), -1)
+            if force_treatmemnt_output:
+                priori[id_treatment, id_outcome] = 1
+            for feature, index in feature_ids.items():
+                if feature not in [TREATMENT, TARGET]:
+                    priori[id_treatment, index] = 0
+                    priori[id_outcome, index] = 0
+
     elif package == "gcastle":
         if algorithm == "pc":
             priori = PrioriKnowledge(n_dim)
@@ -140,21 +183,18 @@ def create_prior(data, package, TREATMENT, TARGET, algorithm=None, force_treatme
             for feature, index in feature_ids.items():
                 if feature not in [TREATMENT, TARGET]:
                     forbidden_edges.extend([(id_treatment, index), (id_outcome, index)])
-                if "age" in feature_ids.keys():
-                    forbidden_edges.extend([(index, feature_ids["age"])])
             priori.add_forbidden_edges(forbidden_edges)
             if force_treatmemnt_output:
                 priori.add_required_edge(id_treatment, id_outcome)
         elif algorithm == "lingam":
             # define a matrix full of -1
             priori = np.full((n_dim, n_dim), -1)
-            priori[id_outcome, id_treatment] = 0
+            if force_treatmemnt_output:
+                priori.add_required_by_node(node_tretament, node_outcome)
             for feature, index in feature_ids.items():
                 if feature not in [TREATMENT, TARGET]:
                     priori[id_treatment, index] = 0
                     priori[id_outcome, index] = 0
-                if "age" in feature_ids.keys():
-                    priori[index, feature_ids["age"]] = 0
     return priori
 
 
@@ -173,6 +213,7 @@ def find_cycles(G):
     except nx.NetworkXNonImplemented:
         print("Graph is undirected. Convert to directed graph first.")
         return []
+
 
 # Check if graph is a DAG and find problematic edges
 def analyze_dag_issues(G):
@@ -207,6 +248,17 @@ def make_dag(G):
         G_dag.remove_edge(cycle[0], cycle[1])
         print(f"Removed edge: {cycle[0]} -> {cycle[1]}")
     return G_dag
+
+def redirect_edges_by_domain_knownledge(G):
+    edges_list = [e for e in G.edges]
+    for edge in edges_list:
+        if (edge[0] == TREATMENT) and (edge[1] != OUTCOME):
+            G.remove_edge(edge[0], edge[1])
+            G.add_edge(edge[1], edge[0])
+        if (edge[0] == OUTCOME):
+            G.remove_edge(edge[0], edge[1])
+            G.add_edge(edge[1], edge[0])
+    return G
 
 
 def get_edges_list_from_gcastlegraph(graph, features):

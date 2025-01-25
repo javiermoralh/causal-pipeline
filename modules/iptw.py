@@ -15,7 +15,7 @@ from utils.gps import create_sample_weights
 
 
 class ContinuousIPTW:
-    def __init__(self, model, n_folds=5, random_state=42):
+    def __init__(self, model, n_folds=5, random_state=42, verbose=0):
         """
         Initialize the Continuous IPTW calculator
         
@@ -33,6 +33,7 @@ class ContinuousIPTW:
         self.model = model
         self.n_folds = n_folds
         self.random_state = random_state
+        self.verbose = verbose
 
     def fit_model(self, X, t, sample_weights=None):
         model_propensity = clone(self.model)
@@ -122,9 +123,10 @@ class ContinuousIPTW:
         gps_values = np.exp(self.kde.score_samples(residuals))
         data_copy["treatment_propensity_score"] = gps_values
         
-        print("\nFirst 5 GPS values:\n", gps_values[:5])
-        print("\nEstimated RMSE:", sigma_hat)
-        print(f"Estimated MAE: {np.mean(data_copy['treatment_residuals_oos'].abs())}")
+        if self.verbose == 1:
+            print("\nFirst 5 GPS values:\n", gps_values[:5])
+            print("\nEstimated RMSE:", sigma_hat)
+            print(f"Estimated MAE: {np.mean(data_copy['treatment_residuals_oos'].abs())}")
         
         # Compute inverse weights
         epsilon = 0.01 # Choose an appropriate small value
@@ -153,7 +155,9 @@ class ContinuousIPTW:
         # Fit KDE
         gps_values = np.exp(self.kde.score_samples(residuals))
         data_copy["treatment_propensity_score"] = gps_values
-        print("\nFirst 5 GPS values:\n", gps_values[:5])
+
+        if self.verbose == 1:
+            print("\nFirst 5 GPS values:\n", gps_values[:5])
         
         # Compute inverse weights
         epsilon = 0.001  # Choose an appropriate small value
@@ -183,7 +187,8 @@ class ContinuousIPTW:
         )
         grid_search.fit(X)
 
-        print(f"Best parameters: {grid_search.best_params_}")
-        print(f"Best score: {grid_search.best_score_}")
+        if self.verbose == 1:
+            print(f"Best parameters: {grid_search.best_params_}")
+            print(f"Best score: {grid_search.best_score_}")
 
         return grid_search.best_params_

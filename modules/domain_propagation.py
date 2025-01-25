@@ -86,21 +86,29 @@ class DomainPropagation:
         if self.undersampling_perc_extrapolation:
             
             if self.stratified_subsampling:
-                bins = pd.cut(data[self.treatment], bins=self.bin_edges, labels=False,)
-                ref_proportions = pd.value_counts(bins, normalize=True)
-                sample_bins = pd.qcut(data_extrapolation[self.treatment], len(ref_proportions), labels=False)
-
-                # Calculate sample sizes for each bin
+                # Discretize treatment into your desired bins
+                sample_bins = pd.cut(
+                    data_extrapolation[self.treatment], 
+                    bins=self.bin_edges, 
+                    labels=False
+                )
+                
+                # Define how many total samples you want in the end
                 target_size = int(len(data_extrapolation) * (1 - self.undersampling_perc_extrapolation))
-                bin_samples = (ref_proportions * target_size).round().astype(int)
+                num_bins = len(self.bin_edges) - 1  # -1 because edges define n-1 intervals
+                samples_per_bin = target_size // num_bins  # integer division
 
-                # Sample from each bin and concatenate
-                data_extrapolation = pd.concat([
-                    data_extrapolation[sample_bins == bin].sample(
-                        n=min(n, len(data_extrapolation[sample_bins == bin])),
-                        random_state=self.seed
-                    ) for bin, n in bin_samples.items()
-                ])
+                # Sample uniformly across bins
+                sampled_data = []
+                for bin_label in range(num_bins):
+                    bin_df = data_extrapolation[sample_bins == bin_label]
+                    # Take whichever is smaller: the bin size or the desired samples_per_bin
+                    n_take = min(len(bin_df), samples_per_bin)
+                    if n_take > 0:
+                        sampled_data.append(bin_df.sample(n=n_take, random_state=self.seed))
+
+                # Concatenate uniform samples from each bin
+                data_extrapolation = pd.concat(sampled_data, ignore_index=True)
             else:
                 data_extrapolation = data_extrapolation.sample(
                     frac=1 - self.undersampling_perc_extrapolation,

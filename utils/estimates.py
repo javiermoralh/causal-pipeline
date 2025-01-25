@@ -19,7 +19,7 @@ def logistic_regression_estimation(train_obs, confounders_list, outcome_causes=[
     logit_estimator = smf.logit(
         formula=regression_formula_str,
         data=train_obs
-    ).fit()
+    ).fit(disp=False)
     return logit_estimator
 
 def s_learner_estimation(X_train_obs, y_train_obs, features, model):
@@ -31,7 +31,7 @@ def s_learner_estimation(X_train_obs, y_train_obs, features, model):
     return s_learner_estimator
 
 
-def iptw_estimation(X_train_obs, y_train_obs, weight, features, model):
+def augmented_iptw_estimation(X_train_obs, y_train_obs, weight, features, model):
     iptw_estimator = clone(model)
     iptw_estimator.fit(
         X_train_obs[features].copy().to_numpy(),

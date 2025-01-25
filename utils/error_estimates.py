@@ -64,7 +64,7 @@ def get_ci_estimation_results(
             if len(outcome_causes) > 0:
                 binned_outcome_causes = [c  + '_bins' for c in outcome_causes]
                 for outcome_cause in outcome_causes:
-                    bins = pd.qcut(train_df_resampled[outcome_cause], q=5, retbins=True, duplicates='drop')[1]
+                    bins = pd.qcut(train_df[outcome_cause], q=5, retbins=True, duplicates='drop')[1]
                     train_df_resampled[outcome_cause + '_bins'] = pd.cut(train_df_resampled[outcome_cause], bins=bins, include_lowest=True)
                     intervention_df[outcome_cause + '_bins'] = pd.cut(intervention_df[outcome_cause], bins=bins, include_lowest=True)
             else:
@@ -79,6 +79,7 @@ def get_ci_estimation_results(
                 model_package="statsmodels",
                 task="classification"
             )
+            # print(individual_potential_outcome)
 
         elif estimation_method == "s_learner":
             s_learner_params = {
@@ -168,6 +169,9 @@ def get_ci_estimation_results(
     average_dose_response_curves = np.array(average_dose_response_curves)
     errors_estimation = np.array(errors_estimation)
 
+    print(average_dose_response_curves)
+    print(errors_estimation)
+
     # Average
     average_dose_response_curve = np.mean(average_dose_response_curves, axis=0)
     average_estimation_error = np.mean(errors_estimation, axis=0)
@@ -193,5 +197,4 @@ def get_ci_estimation_results(
         },
 
     }
-    
     return results

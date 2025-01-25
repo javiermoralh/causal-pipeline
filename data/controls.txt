@@ -1,7 +1,7 @@
-loss_given_default
 n_loans
+n_cards
+loss_given_default
 debt_cirbe
+n_refin
 default_debt_amount
 years_since_default
-n_refin
-n_cards

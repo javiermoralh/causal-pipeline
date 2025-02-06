@@ -6,7 +6,7 @@ from sklearn.base import clone
 from catboost import CatBoostClassifier, CatBoostRegressor
 
 from config import TREATMENT, OUTCOME
-from utils.estimates import logistic_regression_estimation, s_learner_estimation, iptw_estimation
+from utils.estimates import logistic_regression_estimation, s_learner_estimation, augmented_iptw_estimation
 from utils.potential_outcomes import individual_dose_response_curve, individual_real_dose_response_curve
 
 
@@ -65,6 +65,10 @@ def get_ci_estimation_results(
                 binned_outcome_causes = [c  + '_bins' for c in outcome_causes]
                 for outcome_cause in outcome_causes:
                     bins = pd.qcut(train_df[outcome_cause], q=5, retbins=True, duplicates='drop')[1]
+                    max_val = train_df[outcome_cause].max()
+                    bins[-1] = max_val + 1e-8
+                    min_val = train_df[outcome_cause].min()
+                    bins[0] = min_val - 1
                     train_df_resampled[outcome_cause + '_bins'] = pd.cut(train_df_resampled[outcome_cause], bins=bins, include_lowest=True)
                     intervention_df[outcome_cause + '_bins'] = pd.cut(intervention_df[outcome_cause], bins=bins, include_lowest=True)
             else:
@@ -79,7 +83,7 @@ def get_ci_estimation_results(
                 model_package="statsmodels",
                 task="classification"
             )
-            # print(individual_potential_outcome)
+            # print(individual_potential_outcome[:5])
 
         elif estimation_method == "s_learner":
             s_learner_params = {
@@ -137,7 +141,7 @@ def get_ci_estimation_results(
             }
             iptw_params["monotone_constraints"] = monotone_constrains
             iptw_model = CatBoostClassifier(**iptw_params)
-            iptw_boostrap = iptw_estimation(X_resampled, y_resampled, weights_iptw, features_model, iptw_model)
+            iptw_boostrap = augmented_iptw_estimation(X_resampled, y_resampled, weights_iptw, features_model, iptw_model)
             individual_potential_outcome = individual_dose_response_curve(
                 df_eval=intervention_df,
                 treatment_interventions=intervention_values,
@@ -155,13 +159,14 @@ def get_ci_estimation_results(
             generator=generator,
             feature_counterfactual=TREATMENT,
         )
+        # print(individual_real_outcome[:5])
         individual_potential_outcomes_resample = np.array(individual_potential_outcome)
 
         individual_real_outcomes_resample = np.array(individual_real_outcome)
 
         average_dose_response_curve_resample = np.mean(individual_potential_outcomes_resample, axis=0)
         error_resample = compute_arrays_estimation_rmse(individual_potential_outcomes_resample, individual_real_outcomes_resample)
-        
+
         average_dose_response_curves.append(average_dose_response_curve_resample)
         errors_estimation.append(error_resample)
 
@@ -169,8 +174,8 @@ def get_ci_estimation_results(
     average_dose_response_curves = np.array(average_dose_response_curves)
     errors_estimation = np.array(errors_estimation)
 
-    print(average_dose_response_curves)
-    print(errors_estimation)
+    # print(average_dose_response_curves)
+    # print(errors_estimation)
 
     # Average
     average_dose_response_curve = np.mean(average_dose_response_curves, axis=0)

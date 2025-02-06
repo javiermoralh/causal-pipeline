@@ -376,7 +376,15 @@ class DomainPropagation:
             )
             for number in range(0, 100 + step, step)
         ]
-        extrapolation_steps = list(set([0] + extrapolation_steps + [100]))
+        # extrapolation_steps = list(set([0] + extrapolation_steps + [100]))
+        extrapolation_steps = [
+            round(
+                random.uniform(number - step / 2, number + step / 2),
+                2,
+            )
+            for number in range(0, 100 + step, step)
+        ]
+        extrapolation_steps = [i for i in extrapolation_steps if (i>=0) or (i<=100)]
         rounded_quita = step * round(
             quita / step
         )  # this rounds quita to the center of the corresponding interval

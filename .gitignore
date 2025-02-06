@@ -1,0 +1,18 @@
+# Data folder
+# /data/
+
+# Deprecated folder
+/deprecated/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Virtual environment
+/.venv/
+
+# CatBoost info
+/catboost_info/
+
+# Initial tests notebook
+00_initial_tests.ipynb

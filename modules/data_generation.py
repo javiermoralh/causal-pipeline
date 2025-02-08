@@ -3,8 +3,10 @@ import numpy as np
 
 from scipy import stats
 
-from config import TREATMENT, OUTCOME
+from config import TREATMENT, OUTCOME, SEED
 from sklearn.preprocessing import StandardScaler
+
+np.random.seed(SEED)
 
 class DataGeneration:
     def __init__(self):
@@ -201,25 +203,39 @@ class DataGeneration:
         # Force boundary conditions
         prob = np.where(treatment == 0, 0, prob)
         prob = np.where(treatment == 100, 1, prob)
+
+        probs = np.clip(prob, 0, 1)
+        outcome = np.random.binomial(n=1, p=probs)
         
-        return np.clip(prob, 0, 1)
+        return probs, outcome
 
     def compute_causal_effects(self, df, treatment_values, aggregation="ate"):
         """Compute causal effects using the scaled features"""
         effects = []
         
+        original_treatments = df[TREATMENT].to_numpy().flatten()
+        original_outcomes = df[OUTCOME].to_numpy().flatten()
         for value_treatment in treatment_values:
             df_interventions = df.copy()
             df_interventions[TREATMENT] = value_treatment
-            outcome = self.calculate_outcome_probability(
+            probs, _ = self.calculate_outcome_probability(
                 df_interventions, 
                 df_interventions[TREATMENT]
             )
+            outcomes = []
+            for prob, outcome, original_t in zip(probs, original_outcomes, original_treatments):
+                if (outcome == 1) & (value_treatment >= original_t):
+                    outcomes.append(1)
+                elif (outcome == 0) & (value_treatment <= original_t):
+                    outcomes.append(0)
+                else:
+                    outcomes.append(prob)
             
+            outcomes = np.array(outcomes)
             if aggregation == "ate":
-                effects.append(outcome.mean())
+                effects.append(outcomes.mean())
             elif aggregation == "ite":
-                effects.append(outcome.tolist())
+                effects.append(outcomes.tolist())
                 
         if aggregation == "ite":
             effects = [list(row) for row in zip(*effects)]
@@ -227,7 +243,7 @@ class DataGeneration:
         return effects
 
 
-def add_synthetic_features(df, n_redundant=3, n_noise=3, random_state=42):
+def add_synthetic_features(df, n_redundant=3, n_noise=3, random_state=SEED):
     """
     Add redundant and noisy features to a financial dataset.
     Redundant features are created with target correlations
@@ -248,7 +264,6 @@ def add_synthetic_features(df, n_redundant=3, n_noise=3, random_state=42):
     pandas.DataFrame
         DataFrame with additional synthetic features
     """
-    np.random.seed(random_state)
     result_df = df.copy()
     
     # List of original features to sample from

@@ -20,3 +20,4 @@ __pycache__/
 **/__pycache__
 .env
 .DS_Store
+**.ipynb_checkpoints

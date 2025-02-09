@@ -190,7 +190,7 @@ def get_ci_e_values(
                 "rsm": 1,
                 "objective": "RMSE",
                 "silent": True,
-                "l2_leaf_reg": 3,
+                "l2_leaf_reg": 1,
                 "random_seed": SEED
             }
             model_propensity = CatBoostRegressor(**propensity_params)
@@ -414,7 +414,7 @@ def get_ci_refutation_results(
                 "rsm": 1,
                 "objective": "RMSE",
                 "silent": True,
-                "l2_leaf_reg": 3,
+                "l2_leaf_reg": 1,
                 "random_seed": SEED
             }
             model_propensity = CatBoostRegressor(**propensity_params)

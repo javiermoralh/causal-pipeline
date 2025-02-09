@@ -343,13 +343,12 @@ def get_ci_estimates(
                 "rsm": 1,
                 "objective": "RMSE",
                 "silent": True,
-                "l2_leaf_reg": 3,
+                "l2_leaf_reg": 1,
                 "random_seed": SEED
             }
             model_propensity = CatBoostRegressor(**propensity_params)
             bin_edges_contained = intervention_values
             bin_edges_contained[0] = -1
-
 
             outcome_params = {
                 "n_estimators": 500,

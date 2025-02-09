@@ -3,6 +3,7 @@ import pandas as pd
 import statsmodels.formula.api as smf
 
 from sklearn.base import clone
+from sklearn.linear_model import LogisticRegression
 from catboost import CatBoostClassifier, CatBoostRegressor
 
 from config import TREATMENT, OUTCOME, SEED
@@ -132,7 +133,7 @@ def get_ci_estimation_results(
                 "rsm": 1,
                 "objective": "RMSE",
                 "silent": True,
-                "l2_leaf_reg": 3,
+                "l2_leaf_reg": 1,
                 "random_seed": SEED
             }
             model_propensity = CatBoostRegressor(**propensity_params)
@@ -167,7 +168,9 @@ def get_ci_estimation_results(
             final_model_params["monotone_constraints"] = monotone_constrains
             final_model_aiptw = CatBoostRegressor(**final_model_params)
 
-            final_model_aiptw_boostrap = augmented_iptw_estimation(
+            calibration_model_aiptw = LogisticRegression(solver="lbfgs")
+
+            final_model_aiptw_boostrap, final_model_aiptw_boostrap_calib = augmented_iptw_estimation(
                 X_train_obs=X_resampled, 
                 y_train_obs=y_resampled, 
                 cv_folds=5,
@@ -176,16 +179,17 @@ def get_ci_estimation_results(
                 gps_controls=iptw_controls, 
                 propensity_model=model_propensity, 
                 outcome_model=outcome_model, 
-                final_model=final_model_aiptw
+                final_model=final_model_aiptw,
+                model_calibration=calibration_model_aiptw,
             )
 
             individual_potential_outcome = individual_dose_response_curve(
                 df_eval=intervention_df_copy,
                 treatment_interventions=intervention_values,
-                predictive_model=final_model_aiptw_boostrap, 
+                predictive_model=[final_model_aiptw_boostrap, final_model_aiptw_boostrap_calib], 
                 modelling_features=features_model, 
                 feature_counterfactual=TREATMENT, 
-                model_package="self_aiptw",
+                model_package="self_aiptw_calibrated",
                 task="classification"
             )
 

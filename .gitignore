@@ -6,7 +6,7 @@
 
 # Python cache files
 __pycache__/
-*.pyc
+**/*.pyc
 
 # Virtual environment
 /.venv/
@@ -16,3 +16,8 @@ __pycache__/
 
 # Initial tests notebook
 00_initial_tests.ipynb
+
+**/__pycache__
+.env
+.DS_Store
+**.ipynb_checkpoints

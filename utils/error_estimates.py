@@ -5,10 +5,11 @@ import statsmodels.formula.api as smf
 from sklearn.base import clone
 from catboost import CatBoostClassifier, CatBoostRegressor
 
-from config import TREATMENT, OUTCOME
+from config import TREATMENT, OUTCOME, SEED
 from utils.estimates import logistic_regression_estimation, s_learner_estimation, augmented_iptw_estimation
 from utils.potential_outcomes import individual_dose_response_curve, individual_real_dose_response_curve
 
+np.random.seed(SEED)
 
 def compute_arrays_estimation_rmse(pred, label):
     # Convert to numpy arrays if they aren't already
@@ -52,30 +53,39 @@ def get_ci_estimation_results(
 
     for i in range(n_iterations):
         # Create a bootstrapped dataset
-        features_model = adjustment_set + outcome_causes + [TREATMENT]
-        train_df_resampled = train_df.sample(n=len(train_df), replace=True)
+        features_model = adjustment_set + [TREATMENT]
+        train_df_resampled = train_df.sample(n=len(train_df), replace=True, random_state=SEED+i)
         X_resampled, y_resampled = (
             train_df_resampled[features_model],
             train_df_resampled[[OUTCOME]],
         )
+        intervention_df_copy = intervention_df.copy()
 
         # train model and predict POs
         if estimation_method == "logistic_reg":
             if len(outcome_causes) > 0:
                 binned_outcome_causes = [c  + '_bins' for c in outcome_causes]
                 for outcome_cause in outcome_causes:
-                    bins = pd.qcut(train_df[outcome_cause], q=5, retbins=True, duplicates='drop')[1]
-                    max_val = train_df[outcome_cause].max()
-                    bins[-1] = max_val + 1e-8
-                    min_val = train_df[outcome_cause].min()
-                    bins[0] = min_val - 1
-                    train_df_resampled[outcome_cause + '_bins'] = pd.cut(train_df_resampled[outcome_cause], bins=bins, include_lowest=True)
-                    intervention_df[outcome_cause + '_bins'] = pd.cut(intervention_df[outcome_cause], bins=bins, include_lowest=True)
+                    bins = pd.qcut(train_df_resampled[outcome_cause], q=5, retbins=True, duplicates='drop')[1]
+                    max_val_train = train_df_resampled[outcome_cause].max()
+                    max_val_int = intervention_df_copy[outcome_cause].max() 
+                    bins[-1] = max_val_train if max_val_train > max_val_int else max_val_int
+                    min_val_train = train_df_resampled[outcome_cause].min()
+                    min_val_int = intervention_df_copy[outcome_cause].min()
+                    bins[0] = min_val_train if min_val_train < min_val_int else min_val_int
+                    train_df_resampled[outcome_cause + '_bins'] = pd.cut(
+                        train_df_resampled[outcome_cause], bins=bins, include_lowest=True
+                    )
+                    intervention_df_copy[outcome_cause + '_bins'] = pd.cut(
+                        intervention_df_copy[outcome_cause], bins=bins, include_lowest=True
+                    )
             else:
                 binned_outcome_causes = []
-            log_regression_boostrap = logistic_regression_estimation(train_df_resampled, adjustment_set, binned_outcome_causes)
+            log_regression_boostrap = logistic_regression_estimation(
+                train_df_resampled, adjustment_set, binned_outcome_causes
+            )
             individual_potential_outcome = individual_dose_response_curve(
-                df_eval=intervention_df,
+                df_eval=intervention_df_copy,
                 treatment_interventions=intervention_values,
                 predictive_model=log_regression_boostrap, 
                 modelling_features=adjustment_set + binned_outcome_causes + [TREATMENT], 
@@ -87,21 +97,22 @@ def get_ci_estimation_results(
 
         elif estimation_method == "s_learner":
             s_learner_params = {
-                "n_estimators": 200,
+                "n_estimators": 500,
                 "depth": None,
-                "min_data_in_leaf": round(X_resampled.shape[0]*0.01),
+                "min_data_in_leaf": round(X_resampled.shape[0]*0.05),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
                 "objective": "Logloss",
                 "silent": True,
-                "l2_leaf_reg": 3
+                "l2_leaf_reg": 0,
+                "random_seed": SEED
             }
             s_learner_params["monotone_constraints"] = monotone_constrains
             s_learner_model = CatBoostClassifier(**s_learner_params)
             s_learner_boostrap = s_learner_estimation(X_resampled, y_resampled, features_model, s_learner_model)
             individual_potential_outcome = individual_dose_response_curve(
-                df_eval=intervention_df,
+                df_eval=intervention_df_copy,
                 treatment_interventions=intervention_values,
                 predictive_model=s_learner_boostrap, 
                 modelling_features=features_model, 
@@ -110,51 +121,77 @@ def get_ci_estimation_results(
                 task="classification"
             )
 
-        elif estimation_method == "iptw":
-            init_params = {
+        elif estimation_method == "aiptw":
+            iptw_controls = [c for c in adjustment_set if c not in outcome_causes]
+            propensity_params = {
                 "n_estimators": 200,
                 "depth": None,
-                "min_data_in_leaf": round(X_resampled.shape[0]*(2/3)*0.01),
+                "min_data_in_leaf": round(X_resampled.shape[0]*(4/5)*0.01),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
                 "objective": "RMSE",
                 "silent": True,
-                "l2_leaf_reg": 3
+                "l2_leaf_reg": 3,
+                "random_seed": SEED
             }
-            model_propensity = CatBoostRegressor(**init_params)
-            bin_edges_contained = intervention_values
-            bin_edges_contained[0] = -1
-            weighter = ContinuousIPTW(model=model_propensity, n_folds=5, random_state=42)
-            weights_iptw = weighter.compute_weights(X_resampled[adjustment_set], X_resampled[[TREATMENT]], bin_edges_contained)
+            model_propensity = CatBoostRegressor(**propensity_params)
 
-            iptw_params = {
-                "n_estimators": 200,
+            outcome_params = {
+                "n_estimators": 500,
                 "depth": None,
-                "min_data_in_leaf": round(X_resampled.shape[0]*0.01),
+                "min_data_in_leaf": round(X_resampled.shape[0]*(4/5)*0.05),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
                 "objective": "Logloss",
                 "silent": True,
-                "l2_leaf_reg": 3
+                "l2_leaf_reg": 0,
+                "random_seed": SEED
             }
-            iptw_params["monotone_constraints"] = monotone_constrains
-            iptw_model = CatBoostClassifier(**iptw_params)
-            iptw_boostrap = augmented_iptw_estimation(X_resampled, y_resampled, weights_iptw, features_model, iptw_model)
+            outcome_params["monotone_constraints"] = monotone_constrains
+            outcome_model = CatBoostClassifier(**outcome_params)
+
+            final_model_params = {
+                "n_estimators": 500,
+                "depth": None,
+                "min_data_in_leaf": round(X_resampled.shape[0]*0.05),
+                "learning_rate": 0.01,
+                "subsample": 1,
+                "rsm": 1,
+                "objective": "RMSE",
+                "silent": True,
+                "l2_leaf_reg": 0,
+                "random_seed": SEED,
+            }
+            final_model_params["monotone_constraints"] = monotone_constrains
+            final_model_aiptw = CatBoostRegressor(**final_model_params)
+
+            final_model_aiptw_boostrap = augmented_iptw_estimation(
+                X_train_obs=X_resampled, 
+                y_train_obs=y_resampled, 
+                cv_folds=5,
+                bin_edges=intervention_values.copy(),
+                features=features_model,
+                gps_controls=iptw_controls, 
+                propensity_model=model_propensity, 
+                outcome_model=outcome_model, 
+                final_model=final_model_aiptw
+            )
+
             individual_potential_outcome = individual_dose_response_curve(
-                df_eval=intervention_df,
+                df_eval=intervention_df_copy,
                 treatment_interventions=intervention_values,
-                predictive_model=iptw_boostrap, 
+                predictive_model=final_model_aiptw_boostrap, 
                 modelling_features=features_model, 
                 feature_counterfactual=TREATMENT, 
-                model_package="sklearn",
+                model_package="self_aiptw",
                 task="classification"
             )
 
         # get results
         individual_real_outcome = individual_real_dose_response_curve(
-            df_eval=intervention_df, 
+            df_eval=intervention_df_copy, 
             treatment_interventions=intervention_values,
             generator=generator,
             feature_counterfactual=TREATMENT,

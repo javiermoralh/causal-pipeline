@@ -10,11 +10,11 @@ from sklearn.neighbors import KernelDensity
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.base import clone
-from config import TREATMENT, OUTCOME
+from config import TREATMENT, OUTCOME, SEED
 from utils.gps import create_sample_weights
 
 
-class ContinuousIPTW:
+class GPS:
     def __init__(self, model, n_folds=5, random_state=42, verbose=0):
         """
         Initialize the Continuous IPTW calculator
@@ -62,7 +62,7 @@ class ContinuousIPTW:
         data_copy["treatment_predictions_oos"] = 0.0
         treatment_values = np.array(data_copy[TREATMENT].to_numpy()).flatten()
         treatment_bins = pd.cut(data_copy[TREATMENT], bins=bin_edges, labels=False)
-        kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 
         # Perform cross-validation
         for train_idx, test_idx in kf.split(X, treatment_bins):
@@ -81,7 +81,7 @@ class ContinuousIPTW:
             
         return data_copy["treatment_predictions_oos"]
     
-    def compute_weights(self, X, treatment, bin_edges):
+    def compute_weights(self, X, treatment, bin_edges, inverse_weights=True):
         """
         Compute inverse probability weights for continuous treatment
         
@@ -129,16 +129,19 @@ class ContinuousIPTW:
             print(f"Estimated MAE: {np.mean(data_copy['treatment_residuals_oos'].abs())}")
         
         # Compute inverse weights
-        epsilon = 0.01 # Choose an appropriate small value
-        gps_values_safe = np.where(gps_values == 0, epsilon, gps_values)
-        weights = 1 / gps_values_safe
+        if inverse_weights:
+            epsilon = 0.01 # Choose an appropriate small value
+            gps_values_safe = np.where(gps_values == 0, epsilon, gps_values)
+            weights = 1 / gps_values_safe
+        else:
+            weights = gps_values
         
         # Normalize weights
         weights = weights / np.mean(weights)
         
         return weights
 
-    def compute_oos_weights(self, X, treatment):
+    def compute_oos_weights(self, X, treatment, inverse_weights=True):
         pred_treatment = self.model_t.predict(X)
         
         # data
@@ -160,9 +163,12 @@ class ContinuousIPTW:
             print("\nFirst 5 GPS values:\n", gps_values[:5])
         
         # Compute inverse weights
-        epsilon = 0.001  # Choose an appropriate small value
-        gps_values_safe = np.where(gps_values < epsilon, epsilon, gps_values)
-        weights = 1 / gps_values_safe
+        if inverse_weights:
+            epsilon = 0.01 # Choose an appropriate small value
+            gps_values_safe = np.where(gps_values == 0, epsilon, gps_values)
+            weights = 1 / gps_values_safe
+        else:
+            weights = gps_values
         
         # Normalize weights
         weights = weights / np.mean(weights)

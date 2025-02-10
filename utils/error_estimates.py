@@ -48,6 +48,7 @@ def get_ci_estimation_results(
     generator,
     confidence_level=0.95,
     monotone_constrains=None,
+    bin_edges_gps=None
 ):
     average_dose_response_curves = []
     errors_estimation = []
@@ -127,7 +128,7 @@ def get_ci_estimation_results(
             propensity_params = {
                 "n_estimators": 200,
                 "depth": None,
-                "min_data_in_leaf": round(X_resampled.shape[0]*(4/5)*0.01),
+                "min_data_in_leaf": round(X_resampled.shape[0]*(2/3)*0.01),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
@@ -141,7 +142,7 @@ def get_ci_estimation_results(
             outcome_params = {
                 "n_estimators": 500,
                 "depth": None,
-                "min_data_in_leaf": round(X_resampled.shape[0]*(4/5)*0.05),
+                "min_data_in_leaf": round(X_resampled.shape[0]*(2/3)*0.05),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
@@ -173,14 +174,15 @@ def get_ci_estimation_results(
             final_model_aiptw_boostrap, final_model_aiptw_boostrap_calib = augmented_iptw_estimation(
                 X_train_obs=X_resampled, 
                 y_train_obs=y_resampled, 
-                cv_folds=5,
-                bin_edges=intervention_values.copy(),
+                cv_folds=3,
+                bin_edges=bin_edges_gps,
                 features=features_model,
                 gps_controls=iptw_controls, 
                 propensity_model=model_propensity, 
                 outcome_model=outcome_model, 
                 final_model=final_model_aiptw,
                 model_calibration=calibration_model_aiptw,
+                
             )
 
             individual_potential_outcome = individual_dose_response_curve(
@@ -224,11 +226,11 @@ def get_ci_estimation_results(
 
 
     # Confidence intervals
-    lower_bound_dose_response = np.percentile(average_dose_response_curves, (1 - confidence_level) * 100, axis=0)
-    upper_bound_dose_response = np.percentile(average_dose_response_curves, confidence_level * 100, axis=0)
-
-    lower_bound_estimation_error = np.percentile(errors_estimation, (1 - confidence_level) * 100, axis=0)
-    upper_bound_estimation_error = np.percentile(errors_estimation, confidence_level * 100, axis=0)
+    split = (1 - confidence_level) / 2
+    lower_bound_dose_response = np.percentile(average_dose_response_curves, (1 - confidence_level - split)  * 100, axis=0)
+    upper_bound_dose_response = np.percentile(average_dose_response_curves, (confidence_level + split) * 100, axis=0)
+    lower_bound_estimation_error = np.percentile(errors_estimation, (1 - confidence_level - split) * 100, axis=0)
+    upper_bound_estimation_error = np.percentile(errors_estimation, (confidence_level + split)  * 100, axis=0)
 
     results = {
         "dose-response": {

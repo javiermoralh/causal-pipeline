@@ -260,6 +260,7 @@ def get_ci_estimates(
     outcome_causes,
     confidence_level=0.95,
     monotone_constrains=None,
+    bin_edges_gps=None,
 ):
     average_dose_response_curves = []
 
@@ -347,8 +348,6 @@ def get_ci_estimates(
                 "random_seed": SEED
             }
             model_propensity = CatBoostRegressor(**propensity_params)
-            bin_edges_contained = intervention_values
-            bin_edges_contained[0] = -1
 
             outcome_params = {
                 "n_estimators": 500,
@@ -368,7 +367,7 @@ def get_ci_estimates(
             final_model_params = {
                 "n_estimators": 500,
                 "depth": None,
-                "min_data_in_leaf": round(X_resampled.shape[0]*0.05),
+                "min_data_in_leaf": round(X_resampled.shape[0]*(2/3)*0.05),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
@@ -386,7 +385,7 @@ def get_ci_estimates(
                 X_train_obs=X_resampled, 
                 y_train_obs=y_resampled, 
                 cv_folds=3,
-                bin_edges=bin_edges_contained,
+                bin_edges=bin_edges_gps,
                 features=features_model,
                 gps_controls=iptw_controls, 
                 propensity_model=model_propensity, 
@@ -415,8 +414,9 @@ def get_ci_estimates(
     average_dose_response_curve = np.mean(average_dose_response_curves, axis=0)
 
     # Confidence intervals
-    lower_bound_dose_response = np.percentile(average_dose_response_curves, (1 - confidence_level) * 100, axis=0)
-    upper_bound_dose_response = np.percentile(average_dose_response_curves, confidence_level * 100, axis=0)
+    split = (1 - confidence_level) / 2
+    lower_bound_dose_response = np.percentile(average_dose_response_curves, (1 - confidence_level - split)  * 100, axis=0)
+    upper_bound_dose_response = np.percentile(average_dose_response_curves, (confidence_level + split) * 100, axis=0)
 
     results = {
         "dose-response": {

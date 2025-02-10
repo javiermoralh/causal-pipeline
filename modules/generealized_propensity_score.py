@@ -15,7 +15,7 @@ from utils.gps import create_sample_weights
 
 
 class GPS:
-    def __init__(self, model, n_folds=5, random_state=42, verbose=0):
+    def __init__(self, model, n_folds=5, random_state=SEED, verbose=0):
         """
         Initialize the Continuous IPTW calculator
         

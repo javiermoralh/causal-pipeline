@@ -17,6 +17,7 @@ from utils.estimates import (
     augmented_iptw_estimation,
     get_monotone_contrainst
 )
+from modules.evaluation import cumgain_auc, cumgain_curve, plot_cumgain
 
 
 np.random.seed(SEED)
@@ -105,6 +106,7 @@ def get_ci_e_values(
     outcome_causes,
     confidence_level=0.95,
     monotone_constrains=None,
+    bin_edges_gps=None
 ):
 
     average_dose_response_curves = []
@@ -194,8 +196,6 @@ def get_ci_e_values(
                 "random_seed": SEED
             }
             model_propensity = CatBoostRegressor(**propensity_params)
-            bin_edges_contained = intervention_values
-            bin_edges_contained[0] = -1
 
             outcome_params = {
                 "n_estimators": 500,
@@ -215,7 +215,7 @@ def get_ci_e_values(
             final_model_params = {
                 "n_estimators": 500,
                 "depth": None,
-                "min_data_in_leaf": round(X_train_iter.shape[0]*0.05),
+                "min_data_in_leaf": round(X_train_iter.shape[0]*(2/3)*0.05),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
@@ -233,7 +233,7 @@ def get_ci_e_values(
                 X_train_obs=X_train_iter, 
                 y_train_obs=y_train_iter, 
                 cv_folds=3,
-                bin_edges=bin_edges_contained,
+                bin_edges=bin_edges_gps,
                 features=features_model,
                 gps_controls=iptw_controls, 
                 propensity_model=model_propensity, 
@@ -276,10 +276,182 @@ def get_ci_e_values(
 
 
     # Confidence intervals
-    lower_bound_e_values = np.percentile(e_values_curves, (1 - confidence_level) * 100, axis=0)
-    upper_bound_e_values= np.percentile(e_values_curves, confidence_level * 100, axis=0)
+    split = (1 - confidence_level) / 2
+    lower_bound_e_values = np.percentile(e_values_curves, (1 - confidence_level - split) * 100, axis=0)
+    upper_bound_e_values= np.percentile(e_values_curves, (confidence_level + split) * 100, axis=0)
     
     return average_e_values_curves, lower_bound_e_values, upper_bound_e_values
+
+
+def get_ci_qini(
+    estimation_method,
+    train_df,
+    n_iterations,
+    intervention_df,
+    delta,
+    adjustment_set,
+    outcome_causes,
+    confidence_level=0.95,
+    monotone_constrains=None,
+    bin_edges_gps=None
+):
+
+    average_dose_response_curves = []
+    qinis = []
+    features_model = adjustment_set + [TREATMENT]
+    for i in range(n_iterations):
+        # Create a bootstrapped dataset
+        train_df_resampled = train_df.sample(n=len(train_df), replace=True, random_state=SEED+i)
+        X_train_iter, y_train_iter = (
+            train_df_resampled[features_model],
+            train_df_resampled[[OUTCOME]],
+        )
+        intervention_df_copy = intervention_df.copy()
+
+        # train model and predict POs
+        if estimation_method == "logistic_reg":
+            if len(outcome_causes) > 0:
+                binned_outcome_causes = [c  + '_bins' for c in outcome_causes]
+                for outcome_cause in outcome_causes:
+                    bins = pd.qcut(train_df_resampled[outcome_cause], q=5, retbins=True, duplicates='drop')[1]
+                    max_val_train = train_df_resampled[outcome_cause].max()
+                    max_val_int = intervention_df_copy[outcome_cause].max() 
+                    bins[-1] = max_val_train if max_val_train > max_val_int else max_val_int
+                    min_val_train = train_df_resampled[outcome_cause].min()
+                    min_val_int = intervention_df_copy[outcome_cause].min()
+                    bins[0] = min_val_train if min_val_train < min_val_int else min_val_int
+                    train_df_resampled[outcome_cause + '_bins'] = pd.cut(
+                        train_df_resampled[outcome_cause], bins=bins, include_lowest=True
+                    )
+                    intervention_df_copy[outcome_cause + '_bins'] = pd.cut(
+                        intervention_df_copy[outcome_cause], bins=bins, include_lowest=True
+                    )
+            else:
+                binned_outcome_causes = []
+            log_regression_boostrap = logistic_regression_estimation(
+                train_df_resampled, adjustment_set, binned_outcome_causes
+            )
+            intervention_df_copy['p_repayment'] = log_regression_boostrap.predict(intervention_df_copy[adjustment_set+binned_outcome_causes+[TREATMENT]])
+            intervention_df_copy[TREATMENT] += delta
+            intervention_df_copy['ite'] = (
+                log_regression_boostrap.predict(intervention_df_copy[adjustment_set+binned_outcome_causes+[TREATMENT]]) - intervention_df_copy['p_repayment']
+            ) / delta
+            qini = cumgain_auc(*cumgain_curve(intervention_df_copy))
+
+        elif estimation_method == "s_learner":
+            s_learner_params = {
+                "n_estimators": 500,
+                "depth": None,
+                "min_data_in_leaf": round(X_train_iter.shape[0]*0.05),
+                "learning_rate": 0.01,
+                "subsample": 1,
+                "rsm": 1,
+                "objective": "Logloss",
+                "silent": True,
+                "l2_leaf_reg": 0,
+                "random_seed": SEED
+            }
+            s_learner_model = CatBoostClassifier(**s_learner_params)
+            s_learner_boostrap = s_learner_estimation(
+                X_train_iter, y_train_iter, features_model, s_learner_model
+            )
+            intervention_df_copy['p_repayment'] = s_learner_boostrap.predict_proba(intervention_df_copy[features_model])[:, 1]
+            intervention_df_copy[TREATMENT] += delta
+            intervention_df_copy['ite'] = (
+                s_learner_boostrap.predict_proba(intervention_df_copy[features_model])[:, 1] - intervention_df_copy['p_repayment']
+            ) / delta
+            qini = cumgain_auc(*cumgain_curve(intervention_df_copy))
+
+        elif estimation_method == "aiptw":
+            iptw_controls = [c for c in adjustment_set if c not in outcome_causes]
+            propensity_params = {
+                "n_estimators": 200,
+                "depth": None,
+                "min_data_in_leaf": round(X_train_iter.shape[0]*(2/3)*0.01),
+                "learning_rate": 0.01,
+                "subsample": 1,
+                "rsm": 1,
+                "objective": "RMSE",
+                "silent": True,
+                "l2_leaf_reg": 1,
+                "random_seed": SEED
+            }
+            model_propensity = CatBoostRegressor(**propensity_params)
+
+            outcome_params = {
+                "n_estimators": 500,
+                "depth": None,
+                "min_data_in_leaf": round(X_train_iter.shape[0]*(2/3)*0.05),
+                "learning_rate": 0.01,
+                "subsample": 1,
+                "rsm": 1,
+                "objective": "Logloss",
+                "silent": True,
+                "l2_leaf_reg": 0,
+                "random_seed": SEED
+            }
+            outcome_params["monotone_constraints"] = monotone_constrains
+            outcome_model = CatBoostClassifier(**outcome_params)
+
+            final_model_params = {
+                "n_estimators": 500,
+                "depth": None,
+                "min_data_in_leaf": round(X_train_iter.shape[0]*(2/3)*0.05),
+                "learning_rate": 0.01,
+                "subsample": 1,
+                "rsm": 1,
+                "objective": "RMSE",
+                "silent": True,
+                "l2_leaf_reg": 0,
+                "random_seed": SEED,
+            }
+            final_model_params["monotone_constraints"] = monotone_constrains
+            final_model_aiptw = CatBoostRegressor(**final_model_params)
+
+            calibration_model_aiptw = LogisticRegression(solver="lbfgs")
+
+            final_model_aiptw_boostrap, final_model_aiptw_boostrap_calib = augmented_iptw_estimation(
+                X_train_obs=X_train_iter, 
+                y_train_obs=y_train_iter, 
+                cv_folds=3,
+                bin_edges=bin_edges_gps,
+                features=features_model,
+                gps_controls=iptw_controls, 
+                propensity_model=model_propensity, 
+                outcome_model=outcome_model, 
+                final_model=final_model_aiptw,
+                model_calibration=calibration_model_aiptw,
+            )
+
+            intervention_df_copy['final_model_oos_predictions'] = final_model_aiptw_boostrap.predict(intervention_df_copy[features_model])
+            intervention_df_copy['p_repayment'] = final_model_aiptw_boostrap_calib.predict_proba(intervention_df_copy[['final_model_oos_predictions']])[:, 1]
+            
+            intervention_df_copy[TREATMENT] += delta
+            intervention_df_copy['final_model_oos_predictions'] = final_model_aiptw_boostrap.predict(intervention_df_copy[features_model])
+            intervention_df_copy['p_repayment_delta'] = final_model_aiptw_boostrap_calib.predict_proba(intervention_df_copy[['final_model_oos_predictions']])[:, 1]
+
+            intervention_df_copy['ite'] = (
+                intervention_df_copy['p_repayment_delta'] - intervention_df_copy['p_repayment']
+            ) / delta
+            qini = cumgain_auc(*cumgain_curve(intervention_df_copy))
+
+        # get results
+        qinis.append(qini)
+
+
+    # Convert predictions to a NumPy array
+    qinis = np.array(qinis)
+
+    # Average
+    average_qini = np.mean(qinis, axis=0)
+
+
+    # Confidence intervals
+    split = (1 - confidence_level) / 2
+    lower_bound_qini = np.percentile(qinis, (1 - confidence_level - split) * 100, axis=0)
+    upper_bound_qini = np.percentile(qinis, (confidence_level + split) * 100, axis=0)
+    
+    return average_qini, lower_bound_qini, upper_bound_qini
 
 
 def get_ci_refutation_results(
@@ -292,7 +464,8 @@ def get_ci_refutation_results(
     adjustment_set,
     outcome_causes,
     n_variables_common_cause=5,
-    confidence_level=0.95
+    confidence_level=0.95,
+    bin_edges_gps=None
 ):
 
     average_dose_response_curves = []
@@ -418,8 +591,6 @@ def get_ci_refutation_results(
                 "random_seed": SEED
             }
             model_propensity = CatBoostRegressor(**propensity_params)
-            bin_edges_contained = intervention_values
-            bin_edges_contained[0] = -1
 
             outcome_params = {
                 "n_estimators": 500,
@@ -439,7 +610,7 @@ def get_ci_refutation_results(
             final_model_params = {
                 "n_estimators": 500,
                 "depth": None,
-                "min_data_in_leaf": round(X_train_iter.shape[0]*0.05),
+                "min_data_in_leaf": round(X_train_iter.shape[0]*(2/3)*0.05),
                 "learning_rate": 0.01,
                 "subsample": 1,
                 "rsm": 1,
@@ -456,8 +627,8 @@ def get_ci_refutation_results(
             final_model_aiptw_boostrap, final_model_aiptw_boostrap_calib = augmented_iptw_estimation(
                 X_train_obs=X_train_iter, 
                 y_train_obs=y_train_iter, 
-                cv_folds=5,
-                bin_edges=bin_edges_contained,
+                cv_folds=3,
+                bin_edges=bin_edges_gps,
                 features=features_model_iter,
                 gps_controls=iptw_controls, 
                 propensity_model=model_propensity, 
@@ -490,7 +661,9 @@ def get_ci_refutation_results(
 
 
     # Confidence intervals
-    lower_bound_dose_response = np.percentile(average_dose_response_curves, (1 - confidence_level) * 100, axis=0)
-    upper_bound_dose_response = np.percentile(average_dose_response_curves, confidence_level * 100, axis=0)
+            # Confidence intervals
+    split = (1 - confidence_level) / 2
+    lower_bound_dose_response = np.percentile(average_dose_response_curves, (1 - confidence_level - split) * 100, axis=0)
+    upper_bound_dose_response = np.percentile(average_dose_response_curves, (confidence_level + split) * 100, axis=0)
     
     return average_dose_response_curve, lower_bound_dose_response, upper_bound_dose_response

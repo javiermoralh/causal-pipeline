@@ -74,7 +74,6 @@ def augmented_iptw_estimation(
     m_hat = X_train_obs_copy["outcome_model_oos_predictions"].to_numpy().flatten()
     pseudo_Y = m_hat + (y_train_obs.to_numpy().flatten() - m_hat) * weights_iptw
 
-
     # Final Model
     X_train_obs_copy["pseudo_Y"] = pseudo_Y
     X_train_obs_copy["final_model_oos_predictions"] = 0.0
@@ -90,6 +89,7 @@ def augmented_iptw_estimation(
 
     # Refit
     final_model_iptw = clone(final_model)
+    final_model_iptw.set_params(min_data_in_leaf=round(X_train_obs.shape[0]*0.05))
     final_model_iptw.fit(
         X_train_obs[features].copy().to_numpy(),
         pseudo_Y

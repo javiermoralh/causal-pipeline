@@ -6,3 +6,4 @@ numpy
 networkx
 castle
 causallearn
+catboost

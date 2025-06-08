@@ -9,10 +9,10 @@ This repository implements the methodology described in our KDD 2025 paper: *"An
 
 ## 🎯 Key Contributions
 
-- **Novel Positivity Violation Detection**: Framework to detect and quantify positivity violations in continuous treatment settings
-- **Scalable Dimensionality Reduction**: Two-stage framework specifically designed for causal inference with high-dimensional data
-- **Continuous Treatment Adaptation**: Extension of sensitivity analysis and estimation methods from binary to continuous treatments
-- **End-to-End Integration**: Complete modular workflow bridging the gap between academic theory and practical implementation
+- **Positivity Assumption Violation Handling**: Framework to detect and quantify positivity violations in continuous treatment settings + different remediation strategies suggestions.
+- **Scalable Dimensionality Reduction**: Two-stage selection framework specifically designed for causal inference with high-dimensional data.
+- **Continuous Treatment Adaptations**: Extension of sensitivity analysis and estimation methods from binary to continuous treatments.
+- **End-to-End Integration**: Complete modular workflow bridging the gap between academic theory and practical implementation.
 
 ## 🔧 Problem Statement
 

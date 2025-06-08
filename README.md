@@ -111,7 +111,7 @@ pip install -r requirements.txt
 Our methodology demonstrates significant improvements over baseline approaches:
 
 | Method | Mean Bias | 95% CI |
-|--------|-----------|---------|---------|
+|--------|-----------|---------|
 | Baseline (Full Features) | 0.387 | [0.375, 0.397] |
 | Adjustment Set Only | 0.339 | [0.317, 0.359] |
 | **Proposed Pipeline** | **0.231** | **[0.219, 0.244]** |

@@ -36,7 +36,7 @@ The framework consists of six sequential, modular steps:
 - **Stage 1**: Treatment-predictive feature selection using hybrid FCBF + Sequential Forward Selection
 - **Stage 2**: Dual partial correlation analysis for confounder and outcome predictor identification
 
-**Output**: Reduced adjustment set Z = Z_T ∪ Z_Y maintaining causal validity
+**Output**: Reduced adjustment set $Z = Z_T \cup Z_Y$ maintaining causal validity
 
 ### 2. **Causal Identification**
 **Challenge**: Algorithmic causal discovery alone is insufficient for reliable causal graph construction.

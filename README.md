@@ -122,7 +122,7 @@ Our methodology demonstrates significant improvements over baseline approaches:
 
 ## 📁 Repository Structure
 
-The main code to reproduce the paper results can be found in the mumbered notebooks
+The main code to reproduce the paper results can be found in the numbered notebooks
 
 ```
 causal-pipeline/
@@ -174,7 +174,7 @@ If you use any of the contributions of this paper and this code in your research
 ```bibtex
 @inproceedings{causal-pipeline-2025,
   title={An end-to-end pipeline for Causal ML with continuous treatments: An application to financial decision making},
-  author={Moral Hern\'{a}ndez, Javier and Higuera-Caba\~{n}es, Clara and Ibra\'{i}n, \'{A}lvaro},
+  author={Moral Hernández, Javier and Higuera-Cabañes, Clara and Ibraín, Álvaro},
   booktitle={KDD2025},
   series={KDD '25},
   year={2025},

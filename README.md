@@ -179,7 +179,7 @@ If you use any of the contributions of this paper and this code in your research
   series={KDD '25},
   year={2025},
   publisher={ACM},
-  address={Toronto, ON, Canada},
+  address={Madrid, Spain},
   url={https://github.com/javiermoralh/causal-pipeline}
 }
 ```

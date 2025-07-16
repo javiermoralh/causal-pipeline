@@ -223,6 +223,7 @@ class DataGeneration:
                 df_interventions[TREATMENT]
             )
             outcomes = []
+            probs_outcome = []
             for prob, outcome, original_t in zip(probs, original_outcomes, original_treatments):
                 if (outcome == 1) & (value_treatment >= original_t):
                     outcomes.append(1)
@@ -230,14 +231,18 @@ class DataGeneration:
                     outcomes.append(0)
                 else:
                     outcomes.append(prob)
+                probs_outcome.append(prob)
             
             outcomes = np.array(outcomes)
+            probs_outcome = np.array(probs_outcome)
             if aggregation == "ate":
                 effects.append(outcomes.mean())
             elif aggregation == "ite":
                 effects.append(outcomes.tolist())
+            elif aggregation == "cate":
+                effects.append(probs_outcome.tolist())
                 
-        if aggregation == "ite":
+        if aggregation != "ate":
             effects = [list(row) for row in zip(*effects)]
             
         return effects

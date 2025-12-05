@@ -186,7 +186,7 @@ If you use any of the contributions of this paper and this code in your research
 
 ## 👥 Authors
 
-- **Javier Moral Hernández** - BBVA AI Factory - javier.moral.hernandez@bbva.com
+- **Javier Moral Hernández** - BBVA AI Factory - javier.moral.1996@gmail.com
 - **Clara Higuera-Cabañes** - BBVA AI Factory - clara.higuera@bbva.com  
 - **Álvaro Ibraín** - BBVA AI Factory - alvaro.ibrain@bbva.com
 

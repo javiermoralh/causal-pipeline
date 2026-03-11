@@ -4,7 +4,7 @@ pandas
 scikit-learn
 numpy
 networkx
-castle
+gcastle
 causal-learn
 catboost
 dowhy
